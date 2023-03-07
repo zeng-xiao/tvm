@@ -353,31 +353,6 @@ def argwhere(condition):
     return _make.argwhere(condition)
 
 
-def scatter(data, indices, updates, axis):
-    """Update data at positions defined by indices with values in updates.
-
-    Parameters
-    ----------
-    data : relay.Expr
-        The input data to the operator.
-
-    indices : relay.Expr
-        The index locations to update.
-
-    updates : relay.Expr
-        The values to update.
-
-    axis : int
-        The axis to scatter on.
-
-    Returns
-    -------
-    ret : relay.Expr
-        The computed result.
-    """
-    return _make.scatter(data, indices, updates, axis)
-
-
 def scatter_elements(data, indices, updates, axis=0, reduction="update"):
     """Scatter elements with updating data by reduction of values in updates
     at positions defined by indices.
@@ -397,10 +372,11 @@ def scatter_elements(data, indices, updates, axis=0, reduction="update"):
         The axis to scatter elements on. It is zero by default.
 
     reduction : string, optional
-        The reduction mode for scatter. Choise is from ["update", "add", "mul", "min", max"]
+        The reduction mode for scatter. Choise is from ["update", "add", "mul", "mean", "min", max"]
         If update, the update values will replace the input data
         If add, the update values will be added to the input data
-        If mul, the update values will be multiply to the input data
+        If mul, the input data will be multiplied on the update values
+        If mean, the input data will be mean between the update values and the input data
         If min, there is choice of minimal between the update values and the input data
         If max, there is choice of maximal between the update values and the input data
         It is "update" by default
@@ -1960,6 +1936,33 @@ def stft(
         window = _make.ones([n_fft], "int32")
 
     return _make.stft(data, n_fft, hop_length, win_length, window, normalized, onesided)
+
+
+def dft(re_data, im_data, inverse=False):
+    """
+    Computes the discrete Fourier transform of input (calculation along the last axis).
+    This gives frequency components of the signal as they change over time.
+
+    Parameters
+    ----------
+    re_data : relay.Expr
+        N-D tensor, real part of the input signal.
+
+    im_data : relay.Expr
+        N-D tensor, imaginary part of the input signal.
+        If the signal is real, then the values of this tensor are zeros.
+
+    inverse : bool
+        Whether to perform the inverse discrete fourier transform.
+
+    Returns
+    -------
+    re_output : relay.Expr
+        The Fourier Transform of the input (Real part).
+    im_output : relay.Expr
+        The Fourier Transform of the input (Imaginary part).
+    """
+    return TupleWrapper(_make.dft(re_data, im_data, inverse), 2)
 
 
 def trilu(data, k, upper=True):

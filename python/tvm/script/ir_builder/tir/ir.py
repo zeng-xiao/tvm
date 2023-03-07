@@ -28,9 +28,10 @@ from typing_extensions import Literal
 
 import numpy as np  # type: ignore
 
+from tvm import tir
 from tvm.ir import Range, Type
 from tvm.ir.base import deprecated
-from tvm.runtime import convert, ndarray
+from tvm.runtime import String, convert, ndarray
 from tvm.target import Target
 
 # pylint: disable=unused-import
@@ -61,7 +62,6 @@ from tvm.tir.expr import (
     FloorMod,
     IntImm,
     IterVar,
-    Let,
     Load,
     Max,
     Min,
@@ -857,6 +857,47 @@ def Assert(condition: PrimExpr, message: str) -> frame.AssertFrame:  # pylint: d
     return _ffi_api.Assert(condition, message)  # type: ignore[attr-defined] # pylint: disable=no-member
 
 
+def LetStmt(  # pylint: disable=invalid-name
+    value: PrimExpr,
+    type_annotation: Optional[Type] = None,  # pylint: disable=redefined-outer-name
+    *,
+    var: Optional[Var] = None,  # pylint: disable=redefined-outer-name
+) -> frame.LetFrame:
+    """Create a LetStmt binding
+
+    Parameters
+    ----------
+    value : PrimExpr
+        The value to be bound.
+    type_annotation : Optional[Type] = None
+        The type annotation of the let binding. Usually it is used for fine-grained var typing,
+        particularly, PointerType.
+    var : Optional[Var] = None
+        The variable to bind. If not specified, a new variable will be created.
+
+    Returns
+    -------
+    let_frame : frame.LetFrame
+        The result LetFrame.
+    """
+    if type_annotation is not None:
+        if callable(type_annotation):
+            type_annotation = type_annotation()
+        if isinstance(type_annotation, Var):
+            type_annotation = type_annotation.type_annotation
+    return _ffi_api.LetStmt(value, type_annotation, var)  # type: ignore[attr-defined] # pylint: disable=no-member
+
+
+def Let(  # pylint: disable=invalid-name
+    expr: PrimExpr,
+    where: Dict[Var, PrimExpr],  # pylint: disable=redefined-outer-name
+) -> PrimExpr:
+    """Create a Let expression binding"""
+    assert len(where) == 1, "T.Let only allows `where` to have exactly one element"
+    var, value = list(where.items())[0]  # pylint: disable=redefined-outer-name
+    return tir.Let(var, value, expr)
+
+
 def let(
     v: Var,
     value: PrimExpr,
@@ -880,9 +921,19 @@ def let(
     res : frame.LetFrame
         The result LetFrame.
     """
+
+    @deprecated("T.let", "T.Let")
+    def let_expr(v: Var, value: PrimExpr, body: PrimExpr) -> PrimExpr:
+        return tir.Let(v, value, body)
+
+    @deprecated("T.let", "T.LetStmt")
+    def let_stmt(v: Var, value: PrimExpr) -> frame.LetFrame:
+        return _ffi_api.LegacyLetStmt(v, value)  # type: ignore[attr-defined] # pylint: disable=no-member
+
     if body is None:
-        return _ffi_api.Let(v, value)  # type: ignore[attr-defined] # pylint: disable=no-member
-    return Let(v, value, body)
+        return let_stmt(v, value)
+    else:
+        return let_expr(v, value, body)
 
 
 def realize(
@@ -1134,14 +1185,14 @@ def decl_buffer(
 
 
 def launch_thread(
-    iter_var: IterVar,  # pylint: disable=redefined-outer-name
+    thread: Union[IterVar, str],  # pylint: disable=redefined-outer-name
     extent: PrimExpr,
 ) -> frame.LaunchThreadFrame:
     """Launch a thread.
 
     Parameters
     ----------
-    iter_var : IterVar
+    thread : Union[IterVar, str]
         The iteration variable.
 
     extent : PrimExpr
@@ -1162,11 +1213,14 @@ def launch_thread(
     T.launch_thread(brow, 1)
 
     """
-    return _ffi_api.LaunchThread(iter_var, extent)  # type: ignore[attr-defined] # pylint: disable=no-member
+
+    if isinstance(thread, str):
+        thread = String(thread)
+    return _ffi_api.LaunchThread(thread, extent)  # type: ignore[attr-defined] # pylint: disable=no-member
 
 
 def env_thread(thread_tag: str) -> IterVar:
-    """Bind a var to thread env"
+    """Bind a var to thread env
 
     Parameters
     ----------
@@ -1850,7 +1904,6 @@ __all__ = [
     "thread_binding",
     "grid",
     "Assert",
-    "let",
     "realize",
     "allocate",
     "allocate_const",
@@ -2028,6 +2081,8 @@ __all__ = [
     "Shuffle",
     "Call",
     "CallEffectKind",
+    "let",
+    "LetStmt",
     "Let",
     "IterVar",
     "CommReducer",
